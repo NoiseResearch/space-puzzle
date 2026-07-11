@@ -200,6 +200,9 @@
   .label{font-weight:600;font-size:16px;font-family:var(--BODY);}
   .panel .done{width:100%;margin-top:16px;}
   .btn.mini{min-width:0;min-height:0;padding:8px 12px;font-size:12px;letter-spacing:1px;}
+  .revrow{margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .revline{text-align:center;font-family:var(--MONO);font-size:12px;
+    color:var(--muted);letter-spacing:.5px;line-height:1.4;}
 
   @media (prefers-reduced-motion: reduce){
     .pieceInner.pop{animation:none}
@@ -223,7 +226,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback} = React;
-const APP_REV = 3;
+const APP_REV = 4;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -576,6 +579,16 @@ function Robot({hop}){
 
 /* ---------- Parent settings ---------- */
 function Parent({cfg,setCfg,onNextSong,onClose}){
+  const [vs,setVs]=useState({state:'idle',latest:null});
+  const checkVersion=async()=>{
+    setVs({state:'checking',latest:null});
+    try{
+      const r=await fetch('version.json?ts='+Date.now(),{cache:'no-store'});
+      const j=await r.json();
+      const latest=Number(j.rev);
+      setVs({state: latest>APP_REV ? 'stale' : 'latest', latest});
+    }catch(_){ setVs({state:'error',latest:null}); }
+  };
   const Switch=({k})=> (
     <button className={"switch"+(cfg[k]?" on":"")} aria-pressed={cfg[k]}
       onClick={()=>setCfg({...cfg,[k]:!cfg[k]})}><span className="knob"/></button>
@@ -611,6 +624,17 @@ function Parent({cfg,setCfg,onNextSong,onClose}){
             onChange={e=>setCfg({...cfg,vol:+e.target.value})}/>
         </div>
         <button className="btn primary done" onClick={onClose}>Done</button>
+        <div className="revrow">
+          <button className="btn indigo mini" onClick={checkVersion} disabled={vs.state==='checking'}>
+            {vs.state==='checking'?'Checking…':'Check version'}
+          </button>
+          <div className="revline">
+            {vs.state==='latest' && <span style={{color:'var(--green)'}}>✓ Up to date · Rev {APP_REV}</span>}
+            {vs.state==='stale' && <span style={{color:'var(--amber)'}}>⚠ Update available · you have Rev {APP_REV}, latest Rev {vs.latest}</span>}
+            {vs.state==='error' && <span>Could not check · you have Rev {APP_REV}</span>}
+            {(vs.state==='idle'||vs.state==='checking') && <span>Space Puzzle · Rev {APP_REV}</span>}
+          </div>
+        </div>
       </div>
     </div>
   );
