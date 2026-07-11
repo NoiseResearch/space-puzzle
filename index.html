@@ -93,7 +93,8 @@
 
   /* ---------- Play ---------- */
   .topbar{display:flex;align-items:center;justify-content:space-between;
-    padding:10px 12px;gap:10px;z-index:6;}
+    padding:calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 10px calc(12px + env(safe-area-inset-left));
+    gap:10px;z-index:6;}
   .iconbtn{width:52px;height:52px;border-radius:10px;border:3px solid var(--teal);cursor:pointer;
     background:rgba(0,229,255,.12);color:var(--teal);
     display:flex;align-items:center;justify-content:center;
@@ -222,7 +223,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback} = React;
-const APP_REV = 1;
+const APP_REV = 2;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
