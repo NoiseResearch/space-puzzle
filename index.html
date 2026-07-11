@@ -223,7 +223,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback} = React;
-const APP_REV = 2;
+const APP_REV = 3;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -236,7 +236,8 @@ const GRIDS = [[2,2],[2,3],[3,3],[3,4],[4,4],[4,5],[4,6],[5,6],[6,6],[6,7],[7,7]
    Leave this array empty and the game simply runs with no music.            */
 const TRACKS = [
   'SPSONG1.mp3',
-  // add more songs the same way, e.g. 'SPSONG2.mp3',
+  'SPSONG2.mp3',
+  'SPSONG3.mp3',
 ];
 
 /* ---------- safe storage (works in-app and when deployed) ---------- */
@@ -677,10 +678,14 @@ function App(){
     const st=stageRef.current;if(!st)return null;
     const W=st.clientWidth,H=st.clientHeight;
     const stripH=Math.round(Math.min(150,Math.max(92,H*0.16)));
-    const topPad=8;
+    const topPad=14;
     const areaH=H-stripH-topPad;                 // vertical space for the board
-    const bp=Math.round(Math.max(180,Math.min(W*0.94,areaH-8)));
-    const oy=Math.round(topPad+Math.max(0,(areaH-bp)/2));
+    // the yellow frame extends ~this many px beyond the board on every side
+    // (padding P up to 16 + 3px ring + blur/margin); reserve it so nothing clips
+    const FRAME=26;
+    const maxW=W-2*FRAME, maxH=areaH-2*FRAME;
+    const bp=Math.round(Math.max(180,Math.min(maxW,maxH)));
+    const oy=Math.round(topPad+FRAME+Math.max(0,(areaH-2*FRAME-bp)/2));
     const ox=Math.round((W-bp)/2);
     return {W,H,bp,ox,oy,stripH};
   },[]);
