@@ -226,7 +226,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback} = React;
-const APP_REV = 4;
+const APP_REV = 5;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -464,7 +464,9 @@ function Sky(){
     const N=REDUCE?260:500, SPEED=0.0035, SCALE=320, Z_FAR=3.0, Z_NEAR=0.05;
     const COLORS=['#FF1744','#FF6D00','#FFEA00','#00E676','#00B0FF','#D500F9','#00E5FF','#FFFFFF'];
     let cx=0,cy=0;
-    function size(){cv.width=innerWidth*dpr;cv.height=innerHeight*dpr;x.setTransform(dpr,0,0,dpr,0,0);
+    function size(){cv.width=innerWidth*dpr;cv.height=innerHeight*dpr;
+      cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px';   // keep display size = viewport (fixes off-center on Retina)
+      x.setTransform(dpr,0,0,dpr,0,0);
       cx=innerWidth/2;cy=innerHeight/2;}
     size();addEventListener('resize',size);
     const rnd=()=>(Math.random()-0.5)*2;
@@ -498,7 +500,9 @@ function Celebrate(){
   useEffect(()=>{
     if(REDUCE)return;
     const cv=ref.current,x=cv.getContext('2d');const dpr=Math.min(devicePixelRatio||1,2);
-    cv.width=innerWidth*dpr;cv.height=innerHeight*dpr;x.setTransform(dpr,0,0,dpr,0,0);
+    cv.width=innerWidth*dpr;cv.height=innerHeight*dpr;
+    cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px';
+    x.setTransform(dpr,0,0,dpr,0,0);
     const cols=['#FF1744','#FF6D00','#FFEA00','#00E676','#00B0FF','#D500F9'];
     const P=Array.from({length:90},()=>({x:innerWidth/2,y:innerHeight*0.38,
       vx:(Math.random()-0.5)*9,vy:(Math.random()*-8-3),g:0.22,
