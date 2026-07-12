@@ -226,7 +226,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback} = React;
-const APP_REV = 5;
+const APP_REV = 6;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -593,6 +593,19 @@ function Parent({cfg,setCfg,onNextSong,onClose}){
       setVs({state: latest>APP_REV ? 'stale' : 'latest', latest});
     }catch(_){ setVs({state:'error',latest:null}); }
   };
+  const forceUpdate=async()=>{
+    setVs(v=>({...v,state:'updating'}));
+    try{
+      // drop all caches so the newest files are fetched fresh
+      if(window.caches){ const keys=await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); }
+      // tell the service worker(s) to step aside, then hard-reload
+      if(navigator.serviceWorker){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r=>r.unregister()));
+      }
+    }catch(_){}
+    location.reload(true);
+  };
   const Switch=({k})=> (
     <button className={"switch"+(cfg[k]?" on":"")} aria-pressed={cfg[k]}
       onClick={()=>setCfg({...cfg,[k]:!cfg[k]})}><span className="knob"/></button>
@@ -629,15 +642,19 @@ function Parent({cfg,setCfg,onNextSong,onClose}){
         </div>
         <button className="btn primary done" onClick={onClose}>Done</button>
         <div className="revrow">
-          <button className="btn indigo mini" onClick={checkVersion} disabled={vs.state==='checking'}>
+          <button className="btn indigo mini" onClick={checkVersion} disabled={vs.state==='checking'||vs.state==='updating'}>
             {vs.state==='checking'?'Checking…':'Check version'}
           </button>
           <div className="revline">
             {vs.state==='latest' && <span style={{color:'var(--green)'}}>✓ Up to date · Rev {APP_REV}</span>}
             {vs.state==='stale' && <span style={{color:'var(--amber)'}}>⚠ Update available · you have Rev {APP_REV}, latest Rev {vs.latest}</span>}
+            {vs.state==='updating' && <span style={{color:'var(--amber)'}}>Updating… the game will reload</span>}
             {vs.state==='error' && <span>Could not check · you have Rev {APP_REV}</span>}
             {(vs.state==='idle'||vs.state==='checking') && <span>Space Puzzle · Rev {APP_REV}</span>}
           </div>
+          {vs.state==='stale' && (
+            <button className="btn ghost mini" onClick={forceUpdate}>Force update now ⟳</button>
+          )}
         </div>
       </div>
     </div>
