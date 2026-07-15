@@ -234,8 +234,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 
 <script type="text/babel" data-presets="react">
-const {useState,useRef,useEffect,useCallback} = React;
-const APP_REV = 7;
+const {useState,useRef,useEffect,useCallback,useMemo} = React;
+const APP_REV = 8;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -467,7 +467,13 @@ function slice(src,rows,cols){
     // (5) crisp cut line right on the contour
     trace();g.lineWidth=1;g.strokeStyle='rgba(12,14,26,.55)';g.stroke();
     g.restore();
-    pieces.push({id:r*cols+c,row:r,col:c,m,cw,ch,pw,ph,url:cv.toDataURL()});
+    // tight bbox of the visible outline (incl. tabs), in piece-canvas coords.
+    // The shelf sizes pieces by THIS, not by pw/ph — most of pw/ph is transparent
+    // margin reserved for tabs, which is what made shelf pieces look small.
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    for(const p of pts){ if(p[0]<x0)x0=p[0]; if(p[0]>x1)x1=p[0]; if(p[1]<y0)y0=p[1]; if(p[1]>y1)y1=p[1]; }
+    const bx=x0+(m-c*cw), by=y0+(m-r*ch), bw=x1-x0, bh=y1-y0;
+    pieces.push({id:r*cols+c,row:r,col:c,m,cw,ch,pw,ph,bx,by,bw,bh,url:cv.toDataURL()});
   }
   return pieces;
 }
@@ -683,7 +689,12 @@ function App(){
   const [screen,setScreen]=useState('intro');
   const [err,setErr]=useState('');
   const [src,setSrc]=useState(null);            // source square canvas
-  const [cfg,setCfg]=useState(()=>Object.assign({rows:3,cols:3,guide:true,sound:true,easy:true,music:true,vol:0.6},store.get('pp_cfg',{})));
+  const [cfg,setCfg]=useState(()=>{
+    const c=Object.assign({rows:3,cols:3,guide:true,sound:true,easy:true,music:true,vol:0.5},store.get('pp_cfg',{}));
+    // repair a volume saved while the slider was broken (or from an older build)
+    if(typeof c.vol!=='number'||!isFinite(c.vol)||c.vol<0.05) c.vol=0.5;
+    return c;
+  });
   const [pieces,setPieces]=useState([]);        // slice defs
   const [placed,setPlaced]=useState({});        // id -> true (locked on board)
   const placedRef=useRef({});                   // live mirror for reliable neighbour checks
@@ -721,6 +732,15 @@ function App(){
     }catch(_){ /* no WebAudio here: fall back to element volume */ }
   };
   const playRandomRef=useRef(()=>{});
+  const failCount=useRef(0);
+  const retryArmed=useRef(false);
+  // if a play is refused (autoplay policy), try again on the very next tap
+  const armRetry=()=>{
+    if(retryArmed.current) return; retryArmed.current=true;
+    const h=()=>{ retryArmed.current=false; document.removeEventListener('click',h);
+      if(musicOnRef.current) playRandomRef.current(); };
+    document.addEventListener('click',h,{once:true});
+  };
   playRandomRef.current=()=>{
     const a=audioRef.current; if(!a||TRACKS.length===0) return;
     let i=0;
@@ -728,15 +748,22 @@ function App(){
     curTrack.current=i; a.src=TRACKS[i];
     if(!gainRef.current) a.volume=volRef.current;   // fallback path only
     if(AC&&AC.state==='suspended') AC.resume();
-    a.play().catch(()=>{});
+    a.play().catch(()=>armRetry());
   };
   // create the audio element once; auto-advance to a new random track when one ends
   useEffect(()=>{
     const a=new Audio(); a.preload='auto'; a.loop=false; a.volume=cfg.vol;
     const onEnded=()=>{ if(musicOnRef.current) playRandomRef.current(); };
+    // a track that 404s or fails to decode must not stall the music — skip to another
+    const onError=()=>{ failCount.current++;
+      if(failCount.current<=TRACKS.length && musicOnRef.current) setTimeout(()=>playRandomRef.current(),500); };
+    const onPlaying=()=>{ failCount.current=0; };
     a.addEventListener('ended',onEnded);
+    a.addEventListener('error',onError);
+    a.addEventListener('playing',onPlaying);
     audioRef.current=a;
-    return ()=>{ a.removeEventListener('ended',onEnded); a.pause(); a.src=''; };
+    return ()=>{ a.removeEventListener('ended',onEnded); a.removeEventListener('error',onError);
+      a.removeEventListener('playing',onPlaying); a.pause(); a.src=''; };
   },[]);
   // live-sync volume (gain first, element only as fallback)
   useEffect(()=>{ volRef.current=cfg.vol;
@@ -763,20 +790,39 @@ function App(){
     const W=st.clientWidth,H=st.clientHeight;
     const land=W>H;                  // landscape: height is the scarce axis, so claw it back
     // slimmer shelf + tighter top padding in landscape (the top bar also floats there)
-    const stripH=Math.round(land ? Math.min(120,Math.max(72,H*0.20))
+    const strip0=Math.round(land ? Math.min(120,Math.max(72,H*0.20))
                                  : Math.min(150,Math.max(92,H*0.16)));
     const topPad=land?6:14;
-    const areaH=H-stripH-topPad;                 // vertical space for the board
+    const areaH=H-strip0-topPad;                 // vertical space for the board
     // the frame sticks out past the board by P + its 3px ring; size the board first,
     // then reserve exactly what its own frame needs (instead of a fixed worst case)
     const fit=(over)=>Math.round(Math.max(180,Math.min(W-2*over,areaH-2*over)));
     const P=Math.round(Math.min(16,Math.max(8,fit(22)*0.035)));
     const OVER=P+6;
-    const bp=fit(OVER);
-    const oy=Math.round(topPad+Math.max(OVER,(areaH-bp)/2));
+    const bp=fit(OVER);                          // board size is settled here — it never shrinks below
+    // The board is square, so on a tall screen it can't use all the height. Hand that
+    // leftover to the shelf: bigger pieces, same size board.
+    const slack=Math.max(0,areaH-(bp+2*OVER));
+    const stripH=Math.round(Math.min(land?130:210,strip0+slack));
+    const areaH2=H-stripH-topPad;
+    const oy=Math.round(topPad+Math.max(OVER,(areaH2-bp)/2));
     const ox=Math.round((W-bp)/2);
     return {W,H,bp,ox,oy,stripH};
   },[]);
+
+  /* Shelf piece scale. Sized from each piece's VISIBLE bbox (bw/bh) instead of its
+     padded canvas (pw/ph is mostly transparent tab margin) — that padding was the
+     empty space you saw under the pieces. One uniform scale keeps pieces in correct
+     proportion to each other; capped so they never draw bigger than on the board and
+     so several stay visible in the shelf at once. */
+  const shelfK=useMemo(()=>{
+    if(!metrics||!pieces.length) return 0;
+    let maxBh=0,maxBw=0;
+    for(const p of pieces){ if(p.bh>maxBh)maxBh=p.bh; if(p.bw>maxBw)maxBw=p.bw; }
+    if(!maxBh||!maxBw) return 0;
+    const target=metrics.stripH-6;
+    return Math.min(target/maxBh, metrics.bp/WORK, (metrics.W/2.6)/maxBw);
+  },[metrics,pieces]);
 
   /* build a fresh puzzle */
   const build=useCallback((source)=>{
@@ -874,7 +920,7 @@ function App(){
       <Sky/>
       <div className="layer">
         {screen==='intro' && (
-          <div className="intro" onPointerDown={()=>{startMusic();setScreen('title');}}>
+          <div className="intro" onClick={()=>{startMusic();setScreen('title');}}>
             <div className="logo">Space Puzzle</div>
             <div className="introbot"><WalkRobot/></div>
             <div className="tapstart">Tap to start</div>
@@ -935,12 +981,16 @@ function App(){
                 <div className="strip" ref={stripRef} style={{height:metrics.stripH}}>
                   <div className="strip-inner">
                     {tray.map(id=>{ const d=byId[id]; if(!d)return null;
-                      const hidden=drag&&drag.id===id, ih=metrics.stripH-18;
+                      const hidden=drag&&drag.id===id, k=shelfK;
                       return (
-                        <div key={id} className="tray-piece" style={{visibility:hidden?'hidden':'visible',height:ih}}
+                        <div key={id} className="tray-piece"
+                          style={{visibility:hidden?'hidden':'visible',
+                            width:Math.round(d.bw*k),height:Math.round(d.bh*k),position:'relative'}}
                           onPointerDown={e=>onDown(e,d)} onPointerMove={e=>onMove(e,d)}
                           onPointerUp={e=>onUp(e,d)} onPointerCancel={e=>onCancel(e,d)}>
-                          <img src={d.url} alt="" draggable="false" style={{height:ih}}/>
+                          <img src={d.url} alt="" draggable="false"
+                            style={{position:'absolute',left:-d.bx*k,top:-d.by*k,
+                              width:d.pw*k,height:d.ph*k,maxWidth:'none'}}/>
                         </div>
                       );
                     })}
