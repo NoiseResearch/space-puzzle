@@ -235,7 +235,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback,useMemo} = React;
-const APP_REV = 8;
+const APP_REV = 9;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -257,7 +257,6 @@ const TRACKS = [
   'SPSONG8.mp3',
   'SPSONG9.mp3',
   'SPSONG10.mp3',
-  'SPSONG11.mp3',
 ];
 
 /* ---------- safe storage (works in-app and when deployed) ---------- */
