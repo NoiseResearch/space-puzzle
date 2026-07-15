@@ -4,7 +4,7 @@
    version.json "rev" and APP_REV in index.html to match. On the next open the
    new worker installs, re-caches everything fresh, and takes over; force-quit
    and reopen the installed app once to load the new version.                   */
-const SW_VERSION = 'space-puzzle-v11';
+const SW_VERSION = 'space-puzzle-v12';
 
 const CORE = [
   './',

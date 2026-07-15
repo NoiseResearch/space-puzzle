@@ -235,7 +235,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback,useMemo} = React;
-const APP_REV = 11;
+const APP_REV = 12;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -653,6 +653,7 @@ function Parent({cfg,setCfg,onNextSong,onClose}){
         <div className="row"><span className="label">Sounds</span><Switch k="sound"/></div>
         <div className="row"><span className="label">Easy snap</span><Switch k="easy"/></div>
         <div className="row"><span className="label">Music</span><Switch k="music"/></div>
+        <div className="row"><span className="label">Eco mode</span><Switch k="eco"/></div>
         <div className="prow">
           <div className="prow-head">
             <span className="label">Volume</span>
@@ -689,7 +690,7 @@ function App(){
   const [err,setErr]=useState('');
   const [src,setSrc]=useState(null);            // source square canvas
   const [cfg,setCfg]=useState(()=>{
-    const c=Object.assign({rows:3,cols:3,guide:true,sound:true,easy:true,music:true,vol:0.5},store.get('pp_cfg',{}));
+    const c=Object.assign({rows:3,cols:3,guide:true,sound:true,easy:true,music:true,vol:0.5,eco:false},store.get('pp_cfg',{}));
     // repair a volume saved while the slider was broken (or from an older build)
     if(typeof c.vol!=='number'||!isFinite(c.vol)||c.vol<0.05) c.vol=0.5;
     return c;
@@ -929,7 +930,7 @@ function App(){
 
   return (
     <div className="app">
-      <Sky/>
+      {!cfg.eco && <Sky/>}
       <div className="layer">
         {screen==='intro' && (
           <div className="intro" onClick={()=>{startMusic();setScreen('title');}}>
