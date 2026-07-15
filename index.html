@@ -204,6 +204,15 @@
   .revline{text-align:center;font-family:var(--MONO);font-size:12px;
     color:var(--muted);letter-spacing:.5px;line-height:1.4;}
 
+  /* Landscape: float the top bar over the stage instead of stealing ~70px of
+     height, so the puzzle board can grow. Buttons stay tappable; the bar itself
+     lets taps through to the board underneath. */
+  @media (orientation:landscape){
+    .topbar{position:absolute;top:0;left:0;right:0;pointer-events:none;
+      padding:calc(6px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 6px calc(12px + env(safe-area-inset-left));}
+    .topbar .iconbtn{pointer-events:auto;}
+  }
+
   @media (prefers-reduced-motion: reduce){
     .pieceInner.pop{animation:none}
     .piece.dragging{animation:none}
@@ -226,7 +235,7 @@
 
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useCallback} = React;
-const APP_REV = 6;
+const APP_REV = 7;
 const WORK = 760;          // slicing resolution (crisp on retina)
 const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // puzzle sizes [rows,cols], increasing difficulty
@@ -241,6 +250,14 @@ const TRACKS = [
   'SPSONG1.mp3',
   'SPSONG2.mp3',
   'SPSONG3.mp3',
+  'SPSONG4.mp3',
+  'SPSONG5.mp3',
+  'SPSONG6.mp3',
+  // SPSONG7.mp3 is not in the repo — add it here if you upload it later
+  'SPSONG8.mp3',
+  'SPSONG9.mp3',
+  'SPSONG10.mp3',
+  'SPSONG11.mp3',
 ];
 
 /* ---------- safe storage (works in-app and when deployed) ---------- */
@@ -683,17 +700,34 @@ function App(){
 
   useEffect(()=>store.set('pp_cfg',cfg),[cfg]);
 
-  /* ---------- music engine ---------- */
+  /* ---------- music engine ----------
+     NOTE: iOS treats HTMLAudioElement.volume as READ-ONLY — assigning to it is
+     silently ignored, so a volume slider does nothing on iPhone/iPad. Route the
+     audio through a WebAudio GainNode instead; gain IS adjustable everywhere. */
   const audioRef=useRef(null);
+  const gainRef=useRef(null);
   const curTrack=useRef(-1);
   const musicStarted=useRef(false);
   const volRef=useRef(cfg.vol), musicOnRef=useRef(cfg.music);
+  // build the WebAudio graph once, from inside a real user gesture
+  const wireGain=()=>{
+    const a=audioRef.current; if(!a||gainRef.current) return;
+    try{
+      AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+      const src=AC.createMediaElementSource(a);
+      const g=AC.createGain(); g.gain.value=volRef.current;
+      src.connect(g); g.connect(AC.destination);
+      gainRef.current=g; a.volume=1;          // element stays wide open; gain does the work
+    }catch(_){ /* no WebAudio here: fall back to element volume */ }
+  };
   const playRandomRef=useRef(()=>{});
   playRandomRef.current=()=>{
     const a=audioRef.current; if(!a||TRACKS.length===0) return;
     let i=0;
     if(TRACKS.length>1){ do{ i=Math.floor(Math.random()*TRACKS.length); }while(i===curTrack.current); }
-    curTrack.current=i; a.src=TRACKS[i]; a.volume=volRef.current;
+    curTrack.current=i; a.src=TRACKS[i];
+    if(!gainRef.current) a.volume=volRef.current;   // fallback path only
+    if(AC&&AC.state==='suspended') AC.resume();
     a.play().catch(()=>{});
   };
   // create the audio element once; auto-advance to a new random track when one ends
@@ -704,17 +738,22 @@ function App(){
     audioRef.current=a;
     return ()=>{ a.removeEventListener('ended',onEnded); a.pause(); a.src=''; };
   },[]);
-  // live-sync volume
-  useEffect(()=>{ volRef.current=cfg.vol; if(audioRef.current) audioRef.current.volume=cfg.vol; },[cfg.vol]);
+  // live-sync volume (gain first, element only as fallback)
+  useEffect(()=>{ volRef.current=cfg.vol;
+    if(gainRef.current) gainRef.current.gain.value=cfg.vol;
+    else if(audioRef.current) audioRef.current.volume=cfg.vol;
+  },[cfg.vol]);
   // react to the on/off toggle (only after music has been unlocked by the first tap)
   useEffect(()=>{ musicOnRef.current=cfg.music; const a=audioRef.current; if(!a||!musicStarted.current) return;
-    if(cfg.music){ if(!a.src) playRandomRef.current(); else a.play().catch(()=>{}); }
+    if(cfg.music){ if(AC&&AC.state==='suspended') AC.resume();
+      if(!a.src) playRandomRef.current(); else a.play().catch(()=>{}); }
     else a.pause();
   },[cfg.music]);
   // called on the intro tap — the gesture that unlocks audio on mobile
   const startMusic=()=>{ if(musicStarted.current) return; musicStarted.current=true;
+    wireGain();
     if(musicOnRef.current) playRandomRef.current(); };
-  const nextSong=()=>{ musicStarted.current=true;
+  const nextSong=()=>{ musicStarted.current=true; wireGain();
     if(!cfg.music) setCfg({...cfg,music:true}); playRandomRef.current(); };
 
 
@@ -722,15 +761,19 @@ function App(){
   const layout=useCallback(()=>{
     const st=stageRef.current;if(!st)return null;
     const W=st.clientWidth,H=st.clientHeight;
-    const stripH=Math.round(Math.min(150,Math.max(92,H*0.16)));
-    const topPad=14;
+    const land=W>H;                  // landscape: height is the scarce axis, so claw it back
+    // slimmer shelf + tighter top padding in landscape (the top bar also floats there)
+    const stripH=Math.round(land ? Math.min(120,Math.max(72,H*0.20))
+                                 : Math.min(150,Math.max(92,H*0.16)));
+    const topPad=land?6:14;
     const areaH=H-stripH-topPad;                 // vertical space for the board
-    // the yellow frame extends ~this many px beyond the board on every side
-    // (padding P up to 16 + 3px ring + blur/margin); reserve it so nothing clips
-    const FRAME=26;
-    const maxW=W-2*FRAME, maxH=areaH-2*FRAME;
-    const bp=Math.round(Math.max(180,Math.min(maxW,maxH)));
-    const oy=Math.round(topPad+FRAME+Math.max(0,(areaH-2*FRAME-bp)/2));
+    // the frame sticks out past the board by P + its 3px ring; size the board first,
+    // then reserve exactly what its own frame needs (instead of a fixed worst case)
+    const fit=(over)=>Math.round(Math.max(180,Math.min(W-2*over,areaH-2*over)));
+    const P=Math.round(Math.min(16,Math.max(8,fit(22)*0.035)));
+    const OVER=P+6;
+    const bp=fit(OVER);
+    const oy=Math.round(topPad+Math.max(OVER,(areaH-bp)/2));
     const ox=Math.round((W-bp)/2);
     return {W,H,bp,ox,oy,stripH};
   },[]);
